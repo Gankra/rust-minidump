@@ -25,6 +25,7 @@ use std::path::Path;
 use std::str;
 
 pub use crate::context::*;
+use crate::stackwalk;
 use crate::system_info::{Cpu, Os};
 use minidump_common::format as md;
 use minidump_common::format::{CvSignature, MINIDUMP_STREAM_TYPE};
@@ -112,7 +113,12 @@ pub trait MinidumpStream<'a>: Sized {
     /// `bytes` is the contents of this specific stream.
     /// `all` refers to the full contents of the minidump, for reading auxilliary data
     /// referred to with `MINIDUMP_LOCATION_DESCRIPTOR`s.
-    fn read(bytes: &'a [u8], all: &'a [u8], endian: scroll::Endian) -> Result<Self, Error>;
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        minidump: &'a Minidump<'a, T>,
+        bytes: &'a [u8],
+        all: &'a [u8],
+        endian: scroll::Endian,
+    ) -> Result<Self, Error>;
 }
 
 /// CodeView data describes how to locate debug symbols
@@ -158,7 +164,13 @@ pub struct MinidumpThread<'a> {
     /// The CPU context for the thread, if present.
     pub context: Option<MinidumpContext>,
     /// The stack memory for the thread, if present.
-    pub stack: Option<MinidumpMemory<'a>>,
+    pub stack: MinidumpStack<'a>,
+}
+
+#[derive(Debug)]
+pub struct MinidumpStack<'a> {
+    pub frames: Vec<stackwalk::StackFrame>,
+    pub memory: Option<MinidumpMemory<'a>>,
 }
 
 /// A list of `MinidumpThread`s contained in a `Minidump`.
@@ -837,7 +849,8 @@ impl Default for MinidumpModuleList {
 impl<'a> MinidumpStream<'a> for MinidumpModuleList {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::ModuleListStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
         bytes: &'a [u8],
         all: &'a [u8],
         endian: scroll::Endian,
@@ -1023,7 +1036,8 @@ impl<'a> Default for MinidumpMemoryList<'a> {
 impl<'a> MinidumpStream<'a> for MinidumpMemoryList<'a> {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::MemoryListStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
         bytes: &'a [u8],
         all: &'a [u8],
         endian: scroll::Endian,
@@ -1084,9 +1098,17 @@ impl<'a> MinidumpThread<'a> {
             write!(f, "  (no context)\n\n")?;
         }
 
-        if let Some(ref stack) = self.stack {
+        if let Some(ref memory) = self.stack.memory {
             writeln!(f, "Stack")?;
-            stack.print_contents(f)?;
+
+            memory.print_contents(f)?;
+            for (idx, frame) in self.stack.frames.iter().enumerate() {
+                writeln!(
+                    f,
+                    "Frame {:2} {:14} - {:08x} {:08x} @ \"{}\" ",
+                     idx, format!("({:?})", frame.trust), frame.start_of_frame, frame.instruction, frame.module_name, 
+                )?;
+            }
         } else {
             writeln!(f, "No stack")?;
         }
@@ -1098,7 +1120,8 @@ impl<'a> MinidumpThread<'a> {
 impl<'a> MinidumpStream<'a> for MinidumpThreadList<'a> {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::ThreadListStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        minidump: &'a Minidump<'a, T>,
         bytes: &'a [u8],
         all: &'a [u8],
         endian: scroll::Endian,
@@ -1112,7 +1135,22 @@ impl<'a> MinidumpStream<'a> for MinidumpThreadList<'a> {
             let context_data = location_slice(all, &raw.thread_context)?;
             let context = MinidumpContext::read(context_data, endian).ok();
             // TODO: check memory region
-            let stack = MinidumpMemory::read(&raw.stack, all).ok();
+            let stack_memory = MinidumpMemory::read(&raw.stack, all).ok();
+
+            let modules = minidump.get_stream::<MinidumpModuleList>().ok();
+            let frames = if let (Some(context), Some(stack_memory), Some(modules)) =
+                (context.as_ref(), stack_memory.as_ref(), modules.as_ref())
+            {
+                stackwalk::walkies(context, stack_memory, modules)
+            } else {
+                Vec::new()
+            };
+
+            let stack = MinidumpStack {
+                frames,
+                memory: stack_memory,
+            };
+
             threads.push(MinidumpThread {
                 raw,
                 context,
@@ -1159,7 +1197,8 @@ impl<'a> MinidumpThreadList<'a> {
 impl<'a> MinidumpStream<'a> for MinidumpSystemInfo {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::SystemInfoStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
         bytes: &[u8],
         _all: &[u8],
         endian: scroll::Endian,
@@ -1255,7 +1294,12 @@ impl RawMiscInfo {
 impl<'a> MinidumpStream<'a> for MinidumpMiscInfo {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::MiscInfoStream;
 
-    fn read(bytes: &[u8], _all: &[u8], endian: scroll::Endian) -> Result<MinidumpMiscInfo, Error> {
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
+        bytes: &[u8],
+        _all: &[u8],
+        endian: scroll::Endian,
+    ) -> Result<MinidumpMiscInfo, Error> {
         // The misc info has gone through several revisions, so try to read the largest known
         // struct possible.
         macro_rules! do_read {
@@ -1339,7 +1383,8 @@ impl MinidumpMiscInfo {
 impl<'a> MinidumpStream<'a> for MinidumpBreakpadInfo {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::BreakpadInfoStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
         bytes: &[u8],
         _all: &[u8],
         endian: scroll::Endian,
@@ -1423,7 +1468,8 @@ impl fmt::Display for CrashReason {
 impl<'a> MinidumpStream<'a> for MinidumpException {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::ExceptionStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
         bytes: &'a [u8],
         all: &'a [u8],
         endian: scroll::Endian,
@@ -1517,7 +1563,8 @@ impl MinidumpException {
 impl<'a> MinidumpStream<'a> for MinidumpAssertion {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::AssertionInfoStream;
 
-    fn read(
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
         bytes: &'a [u8],
         _all: &'a [u8],
         endian: scroll::Endian,
@@ -1746,7 +1793,12 @@ fn read_crashpad_module_links(
 impl<'a> MinidumpStream<'a> for MinidumpCrashpadInfo {
     const STREAM_TYPE: MINIDUMP_STREAM_TYPE = MINIDUMP_STREAM_TYPE::CrashpadInfoStream;
 
-    fn read(bytes: &'a [u8], all: &'a [u8], endian: scroll::Endian) -> Result<Self, Error> {
+    fn read<T: Deref<Target = [u8]> + 'a>(
+        _minidump: &'a Minidump<'a, T>,
+        bytes: &'a [u8],
+        all: &'a [u8],
+        endian: scroll::Endian,
+    ) -> Result<Self, Error> {
         let raw: md::MINIDUMP_CRASHPAD_INFO = bytes
             .pread_with(0, endian)
             .or(Err(Error::StreamReadFailure))?;
@@ -1919,7 +1971,7 @@ where
             Err(e) => Err(e),
             Ok(bytes) => {
                 let all_bytes = self.data.deref();
-                S::read(bytes, all_bytes, self.endian)
+                S::read(self, bytes, all_bytes, self.endian)
             }
         }
     }

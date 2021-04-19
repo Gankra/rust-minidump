@@ -34,6 +34,7 @@ fn print_minidump_dump(path: &Path) {
             if let Ok(thread_list) = dump.get_stream::<MinidumpThreadList<'_>>() {
                 thread_list.print(stdout).unwrap();
             }
+            /*
             if let Ok(module_list) = dump.get_stream::<MinidumpModuleList>() {
                 module_list.print(stdout).unwrap();
             }
@@ -53,9 +54,11 @@ fn print_minidump_dump(path: &Path) {
             if let Ok(misc_info) = dump.get_stream::<MinidumpMiscInfo>() {
                 misc_info.print(stdout).unwrap();
             }
+            */
             if let Ok(breakpad_info) = dump.get_stream::<MinidumpBreakpadInfo>() {
                 breakpad_info.print(stdout).unwrap();
             }
+
             // TODO: MemoryInfoList
             match dump.get_stream::<MinidumpCrashpadInfo>() {
                 Ok(crashpad_info) => crashpad_info.print(stdout).unwrap(),

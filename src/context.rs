@@ -395,6 +395,39 @@ impl MinidumpContext {
         }
     }
 
+    pub fn get_frame_pointer(&self) -> u64 {
+        match self.raw {
+            MinidumpRawContext::Amd64(ref ctx) => ctx.rbp,
+            MinidumpRawContext::Arm(ref ctx) => {
+                ctx.iregs[md::ArmRegisterNumbers::FramePointer as usize] as u64
+            }
+            MinidumpRawContext::Arm64(ref ctx) => {
+                ctx.iregs[md::Arm64RegisterNumbers::FramePointer as usize]
+            }
+            MinidumpRawContext::OldArm64(ref ctx) => {
+                ctx.iregs[md::Arm64RegisterNumbers::FramePointer as usize]
+            }
+            MinidumpRawContext::X86(ref ctx) => ctx.ebp as u64,
+            MinidumpRawContext::Mips(ref ctx) => {
+                ctx.iregs[md::MipsRegisterNumbers::StackPointer as usize]
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn is_64bit(&self) -> bool {
+        match self.raw {
+            MinidumpRawContext::Amd64(_) => true,
+            MinidumpRawContext::Arm64(_) => true,
+            MinidumpRawContext::OldArm64(_) => true,
+            MinidumpRawContext::Ppc64(_) => true,
+            MinidumpRawContext::Arm(_) => false,
+            MinidumpRawContext::Ppc(_) => false,
+            MinidumpRawContext::X86(_) => false,
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn format_register(&self, reg: &str) -> String {
         match self.raw {
             MinidumpRawContext::Amd64(ref ctx) => ctx.format_register(reg),

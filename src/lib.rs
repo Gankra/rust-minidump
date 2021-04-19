@@ -29,6 +29,7 @@ pub use scroll::Endian;
 mod context;
 mod iostuff;
 mod minidump;
+mod stackwalk;
 
 pub use minidump_common::format;
 pub use minidump_common::traits::Module;
