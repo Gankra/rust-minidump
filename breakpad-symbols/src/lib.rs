@@ -42,7 +42,7 @@ use tracing::trace;
 
 use std::boxed::Box;
 use std::collections::HashMap;
-use std::fs;
+use tokio::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::{borrow::Cow, sync::Arc};
@@ -338,7 +338,7 @@ impl SymbolClientStrategy for SimpleSymbolSupplier {
             .locate_file(module, FileKind::BreakpadSym)
             .await
             .map_err(|_| SymbolError::NotFound)?;
-        let symbols = SymbolFile::from_file(&file_path).map_err(|e| {
+        let symbols = SymbolFile::from_file(&file_path).await.map_err(|e| {
             trace!("SimpleSymbolSupplier failed: {}", e);
             e
         })?;
@@ -356,7 +356,7 @@ impl SymbolClientStrategy for SimpleSymbolSupplier {
         if let Some(lookup) = lookup(module, file_kind) {
             for path in self.paths.iter() {
                 let test_path = path.join(&lookup.cache_rel);
-                if fs::metadata(&test_path).ok().map_or(false, |m| m.is_file()) {
+                if fs::metadata(&test_path).await.ok().map_or(false, |m| m.is_file()) {
                     trace!("SimpleSymbolSupplier found file {}", test_path.display());
                     return Ok(test_path);
                 }
@@ -416,7 +416,7 @@ impl SymbolClientStrategy for StringSymbolSupplier {
         trace!("StringSymbolSupplier search");
         if let Some(symbols) = self.modules.get(&*module.code_file()) {
             trace!("StringSymbolSupplier found file");
-            let file = SymbolFile::from_bytes(symbols.as_bytes())?;
+            let file = SymbolFile::from_bytes(symbols.as_bytes()).await?;
             trace!("StringSymbolSupplier parsed file!");
             return Ok(file);
         }

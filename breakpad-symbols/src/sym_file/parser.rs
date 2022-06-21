@@ -712,14 +712,14 @@ fn test_func_lines_no_lines() {
     );
 }
 
-#[test]
-fn test_func_lines_and_lines() {
+#[tokio::test]
+async fn test_func_lines_and_lines() {
     let data = b"FUNC 1000 30 10 some func
 1000 10 42 7
 1010 10 52 8
 1020 10 62 15
 ";
-    let file = SymbolFile::from_bytes(data).expect("failed to parse!");
+    let file = SymbolFile::from_bytes(data).await.expect("failed to parse!");
     let (_, f) = file.functions.ranges_values().next().unwrap();
     assert_eq!(f.address, 0x1000);
     assert_eq!(f.size, 0x30);
@@ -768,14 +768,14 @@ fn test_func_lines_and_lines() {
     );
 }
 
-#[test]
-fn test_func_with_m() {
+#[tokio::test]
+async fn test_func_with_m() {
     let data = b"FUNC m 1000 30 10 some func
 1000 10 42 7
 1010 10 52 8
 1020 10 62 15
 ";
-    let file = SymbolFile::from_bytes(data).expect("failed to parse!");
+    let file = SymbolFile::from_bytes(data).await.expect("failed to parse!");
     let (_, _f) = file.functions.ranges_values().next().unwrap();
 }
 
@@ -868,13 +868,13 @@ fn test_stack_cfi_init() {
     );
 }
 
-#[test]
-fn test_stack_cfi_lines() {
+#[tokio::test]
+async fn test_stack_cfi_lines() {
     let data = b"STACK CFI INIT badf00d abc init rules
 STACK CFI deadf00d some rules
 STACK CFI deadbeef more rules
 ";
-    let file = SymbolFile::from_bytes(data).expect("failed to parse!");
+    let file = SymbolFile::from_bytes(data).await.expect("failed to parse!");
     let (_, cfi) = file.cfi_stack_info.ranges_values().next().unwrap();
     assert_eq!(
         cfi,
@@ -898,8 +898,8 @@ STACK CFI deadbeef more rules
     );
 }
 
-#[test]
-fn test_parse_symbol_bytes() {
+#[tokio::test]
+async fn test_parse_symbol_bytes() {
     let bytes = &b"MODULE Linux x86 D3096ED481217FD4C16B29CD9BC208BA0 firefox-bin
 INFO blah blah blah
 FILE 0 foo.c

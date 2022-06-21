@@ -2,7 +2,7 @@
 
 use crate::*;
 use reqwest::{Client, Url};
-use std::fs;
+use tokio::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
@@ -141,7 +141,7 @@ fn file_key(module: &(dyn Module + Sync), file_kind: FileKind) -> FileKey {
     (module_key(module), file_kind)
 }
 
-fn create_cache_file(tmp_path: &Path, final_path: &Path) -> io::Result<NamedTempFile> {
+async fn create_cache_file(tmp_path: &Path, final_path: &Path) -> io::Result<NamedTempFile> {
     // Use tempfile to save things to our cache to ensure proper
     // atomicity of writes. We may want multiple instances of rust-minidump
     // to be sharing a cache, and we don't want one instance to see another
@@ -158,12 +158,12 @@ fn create_cache_file(tmp_path: &Path, final_path: &Path) -> io::Result<NamedTemp
             format!("Bad cache path: {:?}", final_path),
         )
     })?;
-    fs::create_dir_all(&base)?;
+    fs::create_dir_all(&base).await?;
 
     NamedTempFile::new_in(tmp_path)
 }
 
-fn commit_cache_file(mut temp: NamedTempFile, final_path: &Path, url: &Url) -> io::Result<()> {
+async fn commit_cache_file(mut temp: NamedTempFile, final_path: &Path, url: &Url) -> io::Result<()> {
     // Append any extra metadata we also want to be cached as "INFO" lines,
     // because this is an established format that parsers will ignore the
     // contents of by default.
@@ -175,7 +175,7 @@ fn commit_cache_file(mut temp: NamedTempFile, final_path: &Path, url: &Url) -> i
 
     // TODO: don't do this
     if final_path.exists() {
-        fs::remove_file(final_path)?;
+        fs::remove_file(final_path).await?;
     }
 
     // If another process already wrote this entry, prefer their value to
@@ -223,7 +223,7 @@ async fn fetch_symbol_file(
 
     // Now try to create the temp cache file (not yet in the cache)
     let final_cache_path = cache.join(sym_lookup.cache_rel);
-    let mut temp = create_cache_file(tmp, &final_cache_path)
+    let mut temp = create_cache_file(tmp, &final_cache_path).await
         .map_err(|e| {
             warn!("Failed to save symbol file in local disk cache: {}", e);
         })
@@ -246,7 +246,7 @@ async fn fetch_symbol_file(
 
     // Try to finish the cache file and atomically swap it into the cache.
     if let Some(temp) = temp {
-        let _ = commit_cache_file(temp, &final_cache_path, &url).map_err(|e| {
+        let _ = commit_cache_file(temp, &final_cache_path, &url).await.map_err(|e| {
             warn!("Failed to save symbol file in local disk cache: {}", e);
         });
     }
@@ -279,7 +279,7 @@ async fn fetch_lookup(
 
     // Now try to create the temp cache file (not yet in the cache)
     let final_cache_path = cache.join(&lookup.cache_rel);
-    let mut temp = create_cache_file(tmp, &final_cache_path)?;
+    let mut temp = create_cache_file(tmp, &final_cache_path).await?;
 
     // Now stream the contents to our file
     while let Some(chunk) = res

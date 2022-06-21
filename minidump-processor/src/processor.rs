@@ -360,15 +360,29 @@ where
         .and_then(evil::handle_evil)
         .unwrap_or_default();
 
-    let mut threads = vec![];
-    let mut requesting_thread = None;
-    for (i, thread) in thread_list.threads.iter().enumerate() {
+    let requesting_thread = std::sync::Mutex::new(None);
+
+    let threads;
+    {
+    let dump_system_info = &dump_system_info;
+    let misc_info = &misc_info;
+    let exception_context = &exception_context;
+    let memory_list = &memory_list;
+    let thread_names = &thread_names;
+    let evil = &evil;
+    let modules = &modules;
+    let system_info = &system_info;
+    let unloaded_modules = &unloaded_modules;
+    let options = &options;
+    let requesting_thread = &requesting_thread;
+    threads = futures_util::future::join_all(thread_list.threads.iter().enumerate()
+    .map(|(i, thread)|  async move {
         let id = thread.raw.thread_id;
+        let thread = thread;
 
         // If this is the thread that wrote the dump, skip processing it.
         if dump_thread_id.is_some() && dump_thread_id.unwrap() == id {
-            threads.push(CallStack::with_info(id, CallStackInfo::DumpThreadSkipped));
-            continue;
+            return CallStack::with_info(id, CallStackInfo::DumpThreadSkipped);
         }
 
         let thread_context = thread.context(&dump_system_info, misc_info.as_ref());
@@ -380,7 +394,7 @@ where
             .map(|id| id == thread.raw.thread_id)
             .unwrap_or(false)
         {
-            requesting_thread = Some(i);
+            *requesting_thread.lock().unwrap() = Some(i);
             exception_context.as_deref().or(thread_context.as_deref())
         } else {
             thread_context.as_deref()
@@ -420,6 +434,7 @@ where
         .await;
         stack.thread_id = id;
         stack.thread_name = name;
+        
         for frame in &mut stack.frames {
             // If the frame doesn't have a loaded module, try to find an unloaded module
             // that overlaps with its address range. The may be multiple, so record all
@@ -444,9 +459,9 @@ where
             arg_recovery::fill_arguments(&mut stack, stack_memory.as_deref());
         }
 
-        threads.push(stack);
-    }
-
+        stack
+    })).await.into_iter().collect::<Vec<_>>();
+}
     // Collect up info on unimplemented/unknown modules
     let unknown_streams = dump.unknown_streams().collect();
     let unimplemented_streams = dump.unimplemented_streams().collect();
@@ -462,7 +477,7 @@ where
         crash_reason,
         crash_address,
         assertion,
-        requesting_thread,
+        requesting_thread: requesting_thread.into_inner().unwrap(),
         system_info,
         linux_standard_base,
         mac_crash_info,
