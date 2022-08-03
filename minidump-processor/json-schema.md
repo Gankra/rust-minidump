@@ -649,7 +649,7 @@ them for symbolication. All we can tell you is that a module with the given
 name was at a particular location. Whether it was a fake DLL from a hacker,
 who could say?
 
-# 0.14.0 (not yet released)
+# 0.14.0
 
 * Fixed some typos in the `registers` schema, the actual implementation is unchanged
 * `threads.N.frames.N.inlines` added for inlined frames!
