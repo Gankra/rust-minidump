@@ -1,6 +1,8 @@
 <!-- next-header -->
 # Next Version
 
+# Version 0.15.0 (2022-09-21)
+
 TODO
 
 # Version 0.14.0 (2022-08-03)
