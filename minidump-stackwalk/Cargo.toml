@@ -1,7 +1,7 @@
 [package]
 name = "minidump-stackwalk"
 description = "Analyzes minidumps and produces a report (either human-readable or JSON)"
-version = "0.14.0"
+version = "0.15.0-prereleased14"
 authors = ["Ted Mielczarek <ted@mielczarek.org>"]
 license = "MIT"
 homepage = "https://github.com/rust-minidump/rust-minidump"
@@ -23,9 +23,9 @@ mozilla_cab_symbols = ["minidump-processor/mozilla_cab_symbols"]
 [dependencies]
 clap = { version = "3.1", features = ["cargo", "wrap_help", "derive"] }
 indicatif = "0.17.0-rc.11"
-minidump = { version = "0.14.0", path = "../minidump" }
-minidump-common = { version = "0.14.0", path = "../minidump-common" }
-minidump-processor = { version = "0.14.0", path = "../minidump-processor", features = [
+minidump = { version = "0.15.0-prerelease", path = "../minidump" }
+minidump-common = { version = "0.15.0-prerelease", path = "../minidump-common" }
+minidump-processor = { version = "0.15.0-prerelease", path = "../minidump-processor", features = [
     "http",
 ] }
 tokio = { version = "1.12.0", features = ["full"] }
@@ -36,3 +36,12 @@ tracing-subscriber = "0.3.14"
 insta = "1.13.0"
 minidump-synth = { path = "../minidump-synth" }
 test-assembler = "0.1.6"
+
+[package.metadata.release]
+pre-release-replacements = [
+  {file="../RELEASES.md", search="Next Version", replace="Version {{version}} ({{date}})", min=1},
+  {file="../RELEASES.md", search="<!-- next-header -->", replace="<!-- next-header -->\n# Next Version\n", exactly=1},
+  {file="tests/snapshots/test_minidump_stackwalk__markdown-help.snap",  search="minidump-stackwalk 0.*`", replace="minidump-stackwalk {{version}}`", exactly=1},
+  {file="tests/snapshots/test_minidump_stackwalk__long-help.snap",  search="minidump-stackwalk 0.*", replace="minidump-stackwalk {{version}}", exactly=1},
+  {file="tests/snapshots/test_minidump_stackwalk__short-help.snap", search="minidump-stackwalk 0.*", replace="minidump-stackwalk {{version}}", exactly=1}
+]
